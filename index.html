@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#1f1b2e">
+  <title>Pixpote</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" hidden>
+    <header id="top">
+      <button id="btnPersona" class="chip" aria-label="Caractère du jour">
+        <span id="poteName">Pixpote</span>
+        <span id="personaChip" class="persona-chip">🤗 Doux</span>
+      </button>
+      <div class="actions">
+        <button id="btnTts" class="icon" aria-label="Lecture à voix haute">🔈</button>
+        <button id="btnJournal" class="icon" aria-label="Journal">📖</button>
+        <button id="btnSettings" class="icon" aria-label="Réglages">⚙️</button>
+      </div>
+    </header>
+
+    <div id="scene">
+      <canvas id="sceneCanvas" width="96" height="72"></canvas>
+      <button id="btnHands" class="scene-btn left" aria-label="Conversation à la voix">🎧</button>
+      <button id="btnDecor" class="scene-btn" aria-label="Changer de décor">🖼️</button>
+    </div>
+
+    <main id="chat" aria-live="polite"></main>
+
+    <footer id="composer">
+      <textarea id="input" rows="1" placeholder="Raconte-moi…" enterkeyhint="send"></textarea>
+      <button id="btnMic" class="round" aria-label="Dicter">🎤</button>
+      <button id="btnSend" class="round primary" aria-label="Envoyer">➤</button>
+    </footer>
+  </div>
+
+  <div id="overlay" hidden></div>
+  <div id="sheetBack" hidden></div>
+  <div id="sheet" hidden></div>
+  <div id="toast" hidden></div>
+
+  <script src="perso.js"></script>
+  <script src="decors.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
