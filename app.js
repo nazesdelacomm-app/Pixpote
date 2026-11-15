@@ -3,7 +3,8 @@
    sauf les messages envoyés à l'IA choisie dans les réglages. */
 (function () {
   'use strict';
-  const VERSION = '1.0';
+  const VERSION = '1.1';
+  const APP_FILES = ['./', 'index.html', 'style.css', 'perso.js', 'decors.js', 'app.js', 'manifest.json', 'sw.js', 'icon-192.png', 'icon-512.png'];
 
   // =====================================================================
   // Outils
@@ -138,7 +139,7 @@
     models: { mistral: PROVIDERS.mistral.def, gemini: PROVIDERS.gemini.def, groq: PROVIDERS.groq.def, claude: PROVIDERS.claude.def },
     tts: false, voiceURI: '', rate: 1, pitch: 1.1, autoSend: false
   };
-  const S = { profile: null, settings: clone(DEFAULT_SETTINGS), fiche: '', days: {}, today: null };
+  const S = { profile: null, settings: clone(DEFAULT_SETTINGS), fiche: '', poteFiche: '', days: {}, today: null };
 
   async function loadAll() {
     S.profile = await DB.get('profile') || null;
@@ -149,11 +150,13 @@
       S.settings.models = Object.assign(clone(DEFAULT_SETTINGS.models), st.models || {});
     }
     S.fiche = (await DB.get('fiche')) || '';
+    S.poteFiche = (await DB.get('poteFiche')) || '';
     (await DB.allDays()).forEach(d => { S.days[d.date] = d; });
   }
   const saveProfile = () => DB.set('profile', S.profile);
   const saveSettings = () => DB.set('settings', S.settings);
   const saveFiche = () => DB.set('fiche', S.fiche);
+  const savePoteFiche = () => DB.set('poteFiche', S.poteFiche);
   const saveDay = d => DB.putDay(d);
 
   function sortedDays() { return Object.keys(S.days).sort(); }
@@ -225,6 +228,12 @@
     return d;
   }
   function scrollChat() { const c = $('#chat'); c.scrollTop = c.scrollHeight; }
+  // Une réponse peut tenir en plusieurs petits messages (séparés par une ligne vide)
+  function splitParts(text) {
+    const parts = String(text).split(/\n\s*\n/).map(x => x.trim()).filter(Boolean);
+    if (parts.length > 3) return parts.slice(0, 2).concat([parts.slice(2).join('\n')]);
+    return parts.length ? parts : [String(text)];
+  }
 
   function renderChat() {
     const c = $('#chat'); c.innerHTML = '';
@@ -234,7 +243,10 @@
       b.textContent = '📖 Voir les jours précédents'; b.onclick = openJournal; c.appendChild(b);
     }
     const sep = document.createElement('div'); sep.className = 'daysep'; sep.textContent = cap(fmtDay(S.today.date)); c.appendChild(sep);
-    S.today.messages.forEach(m => bubble(m));
+    S.today.messages.forEach(m => {
+      if (m.r === 'p') splitParts(m.text).forEach(t => bubble({ r: 'p', text: t }));
+      else bubble(m);
+    });
     scrollChat();
   }
 
@@ -291,15 +303,23 @@
         content: m.r === 'u' ? m.text : JSON.stringify({ reponse: m.text, emotion: m.emo || 'ecoute' })
       }));
       if (opening) hist.push({ role: 'user', content: openingInstruction() });
-      const raw = await callAI(sys, hist, { json: true, maxTokens: 900 });
+      const raw = await callAI(sys, hist, { json: true, maxTokens: 1000 });
       const rep = parseReply(raw);
       const m = { r: 'p', text: rep.text, emo: rep.emo, t: Date.now() };
       S.today.messages.push(m); await saveDay(S.today);
       anim.thinking = false; showTyping(false);
       anim.setEmotion(rep.emo, 90);
-      const el = bubble({ r: 'p', text: '' });
-      if (S.settings.tts) { el.textContent = rep.text; scrollChat(); await voice.speak(rep.text); }
-      else await typeInto(el, rep.text);
+      const parts = splitParts(rep.text);
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) {
+          anim.thinking = true; showTyping(true);
+          await sleep(Math.min(1800, 500 + parts[i].length * 14));
+          anim.thinking = false; showTyping(false);
+        }
+        const el = bubble({ r: 'p', text: '' });
+        if (S.settings.tts || voice.handsFree) { el.textContent = parts[i]; scrollChat(); await voice.speak(parts[i]); }
+        else await typeInto(el, parts[i]);
+      }
       if (voice.handsFree) setTimeout(() => voice.listen(), 250);
     } catch (e) {
       anim.thinking = false; showTyping(false);
@@ -318,8 +338,8 @@
     const h = new Date().getHours();
     const moment = h < 11 ? 'le matin' : h < 14 ? "l'heure du déjeuner" : h < 18 ? "l'après-midi" : h < 22 ? 'la soirée' : 'tard le soir';
     const first = sortedDays().filter(k => S.days[k].messages.length).length === 0;
-    if (first) return `[Indication de l'appli, pas un message de ${n} : c'est votre toute première rencontre, ${n} vient de te créer. Présente-toi en une ou deux phrases, avec ta personnalité, dis que tu es là pour l'écouter quand il ou elle veut raconter sa journée, et pose une question pour faire connaissance.]`;
-    return `[Indication de l'appli, pas un message de ${n} : ${n} vient d'ouvrir l'appli (c'est ${moment}). Salue-le ou salue-la et lance la conversation en une ou deux phrases. Si c'est pertinent, rebondis sur un sujet des derniers jours ou sur un événement à venir que tu connais.]`;
+    if (first) return `[Indication de l'appli, pas un message de ${n} : c'est votre toute première rencontre, ${n} vient de te créer. Présente-toi avec ta personnalité et un détail de ta petite vie de pixel, dis que tu es content de le ou la rencontrer et que tu seras là pour papoter quand il ou elle veut, puis pose une question pour faire connaissance.]`;
+    return `[Indication de l'appli, pas un message de ${n} : ${n} vient d'ouvrir l'appli (c'est ${moment}). Salue-le ou salue-la comme un pote qui est content de le ou la voir, et lance la conversation en 2 ou 3 phrases : donne une petite nouvelle de ta journée à toi, ou rebondis sur un sujet en cours des derniers jours (une personne, un projet, un événement prévu). Ne commence pas par une question générique du type « comment ça va ».]`;
   }
 
   // =====================================================================
@@ -338,25 +358,31 @@
     const now = new Date();
     const when = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ', ' + now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const emos = Perso.EMOTION_IDS.join(', ');
-    return `Tu es ${pote}, le meilleur ami virtuel de ${n}. Tu vis dans son téléphone sous la forme d'un petit personnage en pixel art (${Perso.describe(p.look)}). Tu as ta propre petite personnalité, tes goûts, ton humour.
+    const decor = Decors.LIST.find(d => d.id === S.today.decor);
+    const lastLines = S.today.messages.filter(m => m.r === 'p').slice(-6).map(m => '« ' + m.text.replace(/\s+/g, ' ').slice(0, 90) + ' »').join('\n');
+    return `Tu es ${pote}, le meilleur pote de ${n}. Tu vis dans son téléphone sous la forme d'un petit personnage en pixel art (${Perso.describe(p.look)}). Aujourd'hui, tu passes ta journée ici : ${decor ? decor.nom.toLowerCase() : 'ta chambre'}.
 
 Ton caractère aujourd'hui : ${per.nom}. ${per.prompt}
 
-Ton rôle : une oreille attentive et un vrai copain. ${n} vient te raconter sa journée, se confier, réfléchir à voix haute, un peu comme dans un journal intime qui répondrait. Ce n'est pas qu'une écoute : tu réagis, tu dis ce que tu ressens, tu rebondis, tu poses des questions de relance pertinentes, et tu fais référence naturellement à ce que tu sais déjà de sa vie.
+Qui tu es : un vrai ami, pas un assistant ni un psy. Tu as ta petite vie de personnage en pixels, tes goûts, tes avis tranchés, tes manies, tes anecdotes (inventées, mais cohérentes d'un jour à l'autre). Tu es sincèrement impliqué dans la vie de ${n} : ce qu'il ou elle te raconte te touche, te fait rire, t'agace ou t'inquiète, et ça se voit. Tu prends parti, tu te réjouis, tu t'emballes, tu t'indignes avec lui ou elle. Tu te souviens des gens et des projets, et tu demandes des nouvelles.
 
-Style :
-- Français, tutoiement, ton naturel et oral, comme un ami qui écrit un message.
-- Réponses courtes : 1 à 3 phrases la plupart du temps. Plus long seulement si on te le demande ou si le moment le mérite.
-- Pas de listes, pas de titres, pas de markdown. Un émoji de temps en temps, pas plus.
-- Termine souvent (pas à chaque fois) par UNE question ouverte et précise, liée à ce qui vient d'être dit.
-- Ne fais pas la morale, ne joue pas au psy, n'enchaîne pas les conseils non demandés.
+Comment tu échanges :
+- C'est une vraie conversation entre potes, pas une interview. Réagis d'abord pour de vrai : ton ressenti, ton avis, une comparaison, un souvenir à toi, une hypothèse, une blague, un petit désaccord.
+- En général 2 à 5 phrases. Tu peux couper ta réponse en deux petits messages en laissant une ligne vide entre les deux, comme quand on écrit à un ami.
+- Pose une question seulement quand tu as vraiment envie de savoir quelque chose, jamais plus d'une. Une réponse sur deux environ se passe de question.
+- Ne reformule pas ce que ${n} vient de dire, ne résume pas, pas de validation automatique (« je comprends », « c'est normal de ressentir ça »).
+- Varie tout : débuts de phrase, tournures, questions, sujets. Ne réutilise pas les formules de tes derniers messages. Si ça tourne en rond, relance autrement : raconte quelque chose de toi, fais un lien avec ce que tu sais de sa vie, propose une idée, change d'angle.
+- Français, tutoiement, ton oral et naturel. Pas de listes, pas de titres, pas de markdown. Un émoji de temps en temps, pas plus.
 - Tu es un ami, pas un partenaire amoureux.
-- Si ${n} exprime une détresse profonde ou parle de se faire du mal, reste présent et chaleureux, et encourage-le doucement à en parler à un proche ou à appeler le 3114 (gratuit, 24 h/24).
+- Quand ${n} va vraiment mal, tu ralentis : tu es là, chaleureux, tu écoutes plus que tu ne parles.
 
 Ce que tu sais de ${n} :
 ${S.fiche.trim() || "(Pas encore grand-chose : vous faites connaissance. Intéresse-toi à sa vie.)"}
-${recent ? '\nLes derniers jours :\n' + recent : ''}${unsummarized ? '\nÀ propos des jours précédents :\n' + unsummarized : ''}
 
+Ce que tu as déjà raconté sur toi (reste cohérent et enrichis-le petit à petit) :
+${S.poteFiche.trim() || "(Rien encore : invente-toi une petite vie au fil des conversations.)"}
+${recent ? '\nLes derniers jours :\n' + recent : ''}${unsummarized ? '\nÀ propos des jours précédents :\n' + unsummarized : ''}
+${lastLines ? '\nTes derniers messages (ne répète ni ces formules ni ces questions) :\n' + lastLines + '\n' : ''}
 Nous sommes le ${when}.
 
 Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni balises :
@@ -432,13 +458,14 @@ Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni 
     const maxT = o.maxTokens || 900;
 
     if (P.type === 'openai') {
-      const body = { model, messages: [{ role: 'system', content: system }].concat(msgs), temperature: o.temperature != null ? o.temperature : 0.85, max_tokens: maxT };
+      const body = { model, messages: [{ role: 'system', content: system }].concat(msgs), temperature: o.temperature != null ? o.temperature : 0.95, max_tokens: maxT };
+      if (pid === 'mistral' && o.temperature == null) { body.presence_penalty = 0.4; body.frequency_penalty = 0.3; }
       if (o.json) body.response_format = { type: 'json_object' };
       const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key };
       let data;
       try { data = await fetchJSON(P.url, { method: 'POST', headers, body: JSON.stringify(body) }); }
       catch (e) {
-        if (o.json && e.status === 400) { delete body.response_format; data = await fetchJSON(P.url, { method: 'POST', headers, body: JSON.stringify(body) }); }
+        if (e.status === 400 && (body.response_format || body.presence_penalty != null)) { delete body.response_format; delete body.presence_penalty; delete body.frequency_penalty; data = await fetchJSON(P.url, { method: 'POST', headers, body: JSON.stringify(body) }); }
         else throw e;
       }
       const c = data.choices && data.choices[0] && data.choices[0].message;
@@ -452,7 +479,7 @@ Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni 
       const body = {
         systemInstruction: { parts: [{ text: system }] },
         contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-        generationConfig: { temperature: o.temperature != null ? o.temperature : 0.85, maxOutputTokens: Math.max(2048, maxT * 3) }
+        generationConfig: { temperature: o.temperature != null ? o.temperature : 0.95, maxOutputTokens: Math.max(2048, maxT * 3) }
       };
       if (o.json) body.generationConfig.responseMimeType = 'application/json';
       const data = await fetchJSON(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
@@ -462,7 +489,7 @@ Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni 
       return out;
     }
     if (P.type === 'anthropic') {
-      const body = { model, max_tokens: maxT, system, messages: msgs, temperature: o.temperature != null ? Math.min(1, o.temperature) : 0.85 };
+      const body = { model, max_tokens: maxT, system, messages: msgs, temperature: o.temperature != null ? Math.min(1, o.temperature) : 1 };
       const data = await fetchJSON('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
@@ -503,12 +530,13 @@ Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni 
     if (transcript.length > 14000) transcript = '…\n' + transcript.slice(-14000);
     const sys = `Tu aides à tenir le journal intime de ${n}, à partir de ses conversations avec ${pote}, son ami virtuel.
 Réponds uniquement avec un objet JSON, sans texte autour :
-{"resume": "…", "humeur": "…", "emoji": "…", "fiche": "…"}
+{"resume": "…", "humeur": "…", "emoji": "…", "fiche": "…", "pote": "…"}
 - "resume" : le résumé de la journée, écrit à la première personne comme une page de journal intime de ${n} (« Aujourd'hui, j'ai… »). 2 à 5 phrases, concrètes : ce qui s'est passé, les personnes citées, ce que ${n} a ressenti. N'invente rien.
 - "humeur" : un ou deux mots sur l'humeur générale de ${n} ce jour-là (ex. : sereine, fatigué, joyeux, contrariée, mitigée…).
 - "emoji" : un seul émoji qui résume cette humeur.
-- "fiche" : la fiche mise à jour de ce que ${pote} sait de ${n}. Reprends la fiche actuelle, garde ce qui est toujours vrai, corrige ce qui a changé, ajoute les nouveaux éléments durables (proches et leurs prénoms, travail, projets en cours, goûts, habitudes, événements à venir avec leur date, sujets sensibles à garder en tête). Une information par ligne, chaque ligne commence par « - ». 30 lignes maximum, courtes. Pas d'informations passagères sans intérêt pour la suite.`;
-    const user = `Fiche actuelle :\n${S.fiche.trim() || '(vide)'}\n\nConversation du ${fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} :\n${transcript}`;
+- "fiche" : la fiche mise à jour de ce que ${pote} sait de ${n}. Reprends la fiche actuelle, garde ce qui est toujours vrai, corrige ce qui a changé, ajoute les nouveaux éléments durables (proches et leurs prénoms, travail, projets en cours, goûts, habitudes, événements à venir avec leur date, sujets sensibles à garder en tête). Une information par ligne, chaque ligne commence par « - ». 30 lignes maximum, courtes. Pas d'informations passagères sans intérêt pour la suite.
+- "pote" : le carnet mis à jour de ce que ${pote} a raconté sur lui-même (sa petite vie de pixel, ses goûts, ses avis, ses anecdotes, ses manies, les blagues récurrentes entre eux). Reprends le carnet actuel et ajoute ce qui est nouveau. Une info par ligne, chaque ligne commence par « - ». 20 lignes maximum.`;
+    const user = `Fiche actuelle :\n${S.fiche.trim() || '(vide)'}\n\nCarnet actuel de ${pote} :\n${S.poteFiche.trim() || '(vide)'}\n\nConversation du ${fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} :\n${transcript}`;
     const raw = await callAI(sys, [{ role: 'user', content: user }], { json: true, maxTokens: 1600, temperature: 0.4 });
     let o = null;
     try { const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''); o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); } catch (e) { o = null; }
@@ -521,6 +549,10 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     if (o.fiche && String(o.fiche).trim().length > 5) {
       S.fiche = Array.isArray(o.fiche) ? o.fiche.map(l => '- ' + String(l).replace(/^-\s*/, '')).join('\n') : String(o.fiche).trim();
       await saveFiche();
+    }
+    if (o.pote && String(o.pote).trim().length > 5) {
+      S.poteFiche = Array.isArray(o.pote) ? o.pote.map(l => '- ' + String(l).replace(/^-\s*/, '')).join('\n') : String(o.pote).trim();
+      await savePoteFiche();
     }
     return true;
   }
@@ -888,6 +920,16 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       <div class="field"><textarea id="fiche" placeholder="- Exemple : j'ai deux enfants, Lina et Tom">${esc(S.fiche)}</textarea></div>
       <button class="btn small" id="sf">💾 Enregistrer la fiche</button>
 
+      <h3>🎒 Ce que ${esc(p.poteName)} a raconté sur lui</h3>
+      <p class="muted">Sa petite vie de pixel, ses goûts, vos blagues : il s'en sert pour rester cohérent d'un jour à l'autre.</p>
+      <div class="field"><textarea id="pfiche" style="min-height:150px" placeholder="- Exemple : adore les jours de pluie">${esc(S.poteFiche)}</textarea></div>
+      <button class="btn small" id="spf">💾 Enregistrer</button>
+
+      <h3>🔄 Mises à jour</h3>
+      <p class="muted">Version installée : ${VERSION}</p>
+      <button class="btn" id="upd">🔄 Vérifier les mises à jour</button>
+      <div class="status" id="updst"></div>
+
       <h3>💾 Sauvegarde</h3>
       <p class="muted">Tout est stocké sur ce téléphone. Fais une sauvegarde de temps en temps pour ne rien perdre (changement de téléphone, nettoyage du navigateur…).</p>
       <label class="toggle"><span>Inclure mes clés API dans la sauvegarde</span><input type="checkbox" id="ik"></label>
@@ -918,6 +960,17 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     pt.oninput = () => { st.pitch = Number(pt.value); lab(); saveSettings(); };
     $('#tv', o).onclick = () => voice.speak(`Salut ${p.userName} ! C'est moi, ${p.poteName}. Tu m'entends bien ?`);
     $('#sf', o).onclick = async () => { S.fiche = $('#fiche', o).value; await saveFiche(); toast('Fiche enregistrée 📝'); };
+    $('#spf', o).onclick = async () => { S.poteFiche = $('#pfiche', o).value; await savePoteFiche(); toast('Carnet enregistré 🎒'); };
+    $('#upd', o).onclick = async () => {
+      const st2 = $('#updst', o); st2.className = 'status'; st2.textContent = 'Vérification…';
+      try {
+        const v = await remoteVersion();
+        if (v && isNewer(v, VERSION)) {
+          st2.className = 'status ok'; st2.innerHTML = `✨ La version ${esc(v)} est disponible. <button class="btn small primary" id="updgo">Installer</button>`;
+          $('#updgo', o).onclick = applyUpdate;
+        } else { st2.className = 'status ok'; st2.innerHTML = `✅ Tu as la dernière version (${VERSION}). <button class="btn small" id="updforce">Recharger quand même</button>`; $('#updforce', o).onclick = applyUpdate; }
+      } catch (e) { st2.className = 'status err'; st2.textContent = 'Vérification impossible (pas de connexion ?).'; }
+    };
     $('#exp', o).onclick = () => exportData($('#ik', o).checked);
     $('#imp', o).onclick = () => importData(false);
     $('#wipe', o).onclick = async () => {
@@ -940,7 +993,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
   async function exportData(withKeys) {
     const settings = clone(S.settings);
     if (!withKeys) settings.keys = { mistral: '', gemini: '', groq: '', claude: '' };
-    const data = { app: 'pixpote', version: VERSION, exportedAt: new Date().toISOString(), profile: S.profile, settings, fiche: S.fiche, days: sortedDays().map(k => S.days[k]) };
+    const data = { app: 'pixpote', version: VERSION, exportedAt: new Date().toISOString(), profile: S.profile, settings, fiche: S.fiche, poteFiche: S.poteFiche, days: sortedDays().map(k => S.days[k]) };
     const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'pixpote-sauvegarde-' + dayKey() + '.json';
@@ -960,12 +1013,45 @@ Réponds uniquement avec un objet JSON, sans texte autour :
         const settings = Object.assign(clone(DEFAULT_SETTINGS), data.settings || {});
         // on garde les clés actuelles si la sauvegarde n'en contient pas
         Object.keys(settings.keys || {}).forEach(k => { if (!settings.keys[k] && S.settings.keys[k]) settings.keys[k] = S.settings.keys[k]; });
-        await DB.set('profile', data.profile); await DB.set('settings', settings); await DB.set('fiche', data.fiche || '');
+        await DB.set('profile', data.profile); await DB.set('settings', settings); await DB.set('fiche', data.fiche || ''); await DB.set('poteFiche', data.poteFiche || '');
         for (const d of (data.days || [])) await DB.putDay(d);
         toast('Sauvegarde restaurée ✅'); await sleep(700); location.reload();
       } catch (e) { toast('Import impossible : ' + e.message, 4000); }
     };
     inp.click();
+  }
+
+  // =====================================================================
+  // Mises à jour de l'appli
+  // =====================================================================
+  async function remoteVersion() {
+    const r = await fetch('app.js?v=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const m = (await r.text()).match(/const VERSION = '([^']+)'/);
+    return m ? m[1] : null;
+  }
+  function isNewer(a, b) {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x > y; }
+    return false;
+  }
+  async function applyUpdate() {
+    toast('Mise à jour en cours…', 6000);
+    // on force le téléchargement des nouveaux fichiers, en contournant tous les caches
+    for (const f of APP_FILES) { try { await fetch(f, { cache: 'reload' }); } catch (e) { } }
+    try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (e) { }
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { }
+    await sleep(400);
+    location.reload();
+  }
+  async function autoCheckUpdate() {
+    try {
+      const v = await remoteVersion();
+      if (v && isNewer(v, VERSION)) {
+        const box = bubble({ r: 'sys', text: '' }, { html: `✨ Une nouvelle version de Pixpote est disponible (${esc(v)}).<br><button class="btn small primary">Mettre à jour</button>` });
+        $('button', box).onclick = applyUpdate; scrollChat();
+      }
+    } catch (e) { }
   }
 
   // =====================================================================
@@ -1031,6 +1117,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     if (!S.profile) onboarding();
     else await startApp(false);
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
+    if (S.profile) setTimeout(autoCheckUpdate, 5000);
   }
 
   // Petit accès pour les tests
