@@ -70,7 +70,10 @@
     { id: 'gris', nom: 'Gris', c: '#8b909a' },
     { id: 'noir', nom: 'Noir', c: '#3b3a47' },
     { id: 'blanc', nom: 'Blanc', c: '#efedf2' },
-    { id: 'beige', nom: 'Beige', c: '#d8c3a0' }
+    { id: 'beige', nom: 'Beige', c: '#d8c3a0' },
+    { id: 'bordeaux', nom: 'Bordeaux', c: '#8e2f45' },
+    { id: 'turquoise', nom: 'Turquoise', c: '#2fb3a8' },
+    { id: 'kaki', nom: 'Kaki', c: '#7a7f4a' }
   ];
   const HAIR_STYLES = [
     { id: 'court', nom: 'Court' },
@@ -82,7 +85,11 @@
     { id: 'queue', nom: 'Queue de cheval' },
     { id: 'chignon', nom: 'Chignon' },
     { id: 'couettes', nom: 'Couettes' },
-    { id: 'boucle', nom: 'Bouclé' },
+    { id: 'boucle', nom: 'Bouclé court' },
+    { id: 'longboucle', nom: 'Long bouclé' },
+    { id: 'afro', nom: 'Afro' },
+    { id: 'locs', nom: 'Locks' },
+    { id: 'tresse', nom: 'Tresse' },
     { id: 'rase', nom: 'Rasé' },
     { id: 'chauve', nom: 'Chauve' }
   ];
@@ -98,7 +105,25 @@
     { id: 'aucune', nom: 'Aucunes' },
     { id: 'rondes', nom: 'Rondes' },
     { id: 'carrees', nom: 'Carrées' },
+    { id: 'grosses', nom: 'Grosses montures' },
     { id: 'soleil', nom: 'De soleil' }
+  ];
+  const GLASS_COLORS = [
+    { id: 'noir', nom: 'Noir', c: '#2c2833' },
+    { id: 'ecaille', nom: 'Écaille', c: '#7a4524' },
+    { id: 'dore', nom: 'Doré', c: '#c99a2e' },
+    { id: 'rouge', nom: 'Rouge', c: '#c8403a' },
+    { id: 'bleu', nom: 'Bleu', c: '#2f5fb3' },
+    { id: 'vert', nom: 'Vert', c: '#2f7a58' },
+    { id: 'rose', nom: 'Rose', c: '#e27cae' },
+    { id: 'blanc', nom: 'Blanc', c: '#ecebf2' }
+  ];
+  const DETAILS = [
+    { id: 'aucun', nom: 'Aucun' },
+    { id: 'rousseur', nom: 'Taches de rousseur' },
+    { id: 'grain', nom: 'Grain de beauté' },
+    { id: 'joues', nom: 'Joues roses' },
+    { id: 'cernes', nom: 'Petites cernes' }
   ];
   const TOPS = [
     { id: 'tshirt', nom: 'T-shirt' },
@@ -106,7 +131,8 @@
     { id: 'chemise', nom: 'Chemise' },
     { id: 'colroule', nom: 'Col roulé' },
     { id: 'raye', nom: 'Marinière' },
-    { id: 'salopette', nom: 'Salopette' }
+    { id: 'salopette', nom: 'Salopette' },
+    { id: 'veste', nom: 'Veste ouverte' }
   ];
   const ACCESSORIES = [
     { id: 'aucun', nom: 'Aucun' },
@@ -116,7 +142,9 @@
     { id: 'casque', nom: 'Casque audio' },
     { id: 'fleur', nom: 'Fleur' },
     { id: 'noeud', nom: 'Nœud' },
-    { id: 'boucles', nom: "Boucles d'oreilles" }
+    { id: 'boucles', nom: "Boucles d'oreilles" },
+    { id: 'echarpe', nom: 'Écharpe' },
+    { id: 'bob', nom: 'Bob' }
   ];
 
   // Champs éditables, dans l'ordre du « miroir »
@@ -125,8 +153,10 @@
     { key: 'hair', nom: 'Coiffure', list: HAIR_STYLES },
     { key: 'hairColor', nom: 'Cheveux', list: HAIR_COLORS, swatch: true },
     { key: 'eyes', nom: 'Yeux', list: EYE_COLORS, swatch: true },
+    { key: 'details', nom: 'Visage', list: DETAILS },
     { key: 'beard', nom: 'Barbe', list: BEARDS },
     { key: 'glasses', nom: 'Lunettes', list: GLASSES },
+    { key: 'glassesColor', nom: 'Monture', list: GLASS_COLORS, swatch: true },
     { key: 'top', nom: 'Haut', list: TOPS },
     { key: 'topColor', nom: 'Couleur du haut', list: COLORS, swatch: true },
     { key: 'acc', nom: 'Accessoire', list: ACCESSORIES },
@@ -135,7 +165,7 @@
 
   const DEFAULT_LOOK = {
     skin: 'claire', hair: 'court', hairColor: 'chatain', eyes: 'marron', beard: 'aucune',
-    glasses: 'aucune', top: 'sweat', topColor: 'moutarde', acc: 'aucun', accColor: 'rouge'
+    glasses: 'aucune', glassesColor: 'noir', details: 'aucun', top: 'sweat', topColor: 'moutarde', acc: 'aucun', accColor: 'rouge'
   };
 
   function pick(list, id) { return (list.find(o => o.id === id) || list[0]); }
@@ -149,6 +179,8 @@
     if (Math.random() < 0.5) look.acc = 'aucun';
     if (Math.random() < 0.5) look.beard = 'aucune';
     if (Math.random() < 0.6) look.glasses = 'aucune';
+    if (Math.random() < 0.6) look.details = 'aucun';
+    if (Math.random() < 0.5) look.glassesColor = 'noir';
     if (look.hairColor === 'bleu' || look.hairColor === 'rose' || look.hairColor === 'violet' || look.hairColor === 'vert') {
       if (Math.random() < 0.6) look.hairColor = r(HAIR_COLORS.slice(0, 6));
     }
@@ -269,6 +301,15 @@
       b.row(22, 12, 19, sd, 'shirt'); b.row(24, 12, 19, sd, 'shirt');
       b.row(26, 11, 20, sd, 'shirt');
       for (let y = 28; y <= 38; y += 2) { b.set(12, y, lt, 'shirt'); b.set(19, y, lt, 'shirt'); }
+    } else if (t === 'veste') {
+      const tee = '#f4f1ea';
+      for (let y = 25; y <= 39; y++) { const w = y < 27 ? 2 : 3; b.row(y, 16 - w, 15 + w, tee, 'shirt'); }
+      b.row(25, 13, 18, skinSd, 'skin'); b.row(26, 14, 17, skinSd, 'skin');
+      b.row(27, 14, 17, shade(tee, 0.12), 'shirt');
+      // revers
+      for (let y = 25; y <= 32; y++) { b.set(12 - Math.max(0, 27 - y), y, lt, 'shirt'); b.set(19 + Math.max(0, 27 - y), y, lt, 'shirt'); }
+      for (let y = 28; y <= 39; y++) { b.set(12, y, sd, 'shirt'); b.set(19, y, sd, 'shirt'); }
+      b.set(10, 35, sd, 'shirt'); b.row(35, 20, 21, sd, 'shirt');
     } else if (t === 'salopette') {
       const tee = '#f4f1ea', teeSd = shade(tee, 0.12);
       b.row(25, 10, 21, tee, 'shirt'); b.row(26, 8, 23, tee, 'shirt'); b.row(27, 7, 24, tee, 'shirt');
@@ -329,6 +370,22 @@
         b.spans([[1, 11, 20], [2, 8, 23], [3, 6, 25], [4, 5, 26], [5, 4, 27], [6, 3, 28]], c, 'hairb');
         for (let y = 7; y <= 20; y++) b.srow(y, 3, 6, c, 'hairb');
         b.srow(21, 4, 7, c, 'hairb'); b.srow(22, 5, 8, c, 'hairb');
+        break;
+      case 'longboucle':
+        b.spans([[1, 10, 21], [2, 7, 24], [3, 5, 26], [4, 4, 27], [5, 3, 28]], c, 'hairb');
+        for (let y = 6; y <= 31; y++) { const w = (Math.floor(y / 2) % 2); b.srow(y, 2 + w, 7, c, 'hairb'); }
+        b.srow(32, 3, 6, c, 'hairb'); b.srow(33, 4, 5, c, 'hairb');
+        break;
+      case 'afro':
+        b.spans([[-2, 10, 21], [-1, 7, 24], [0, 5, 26], [1, 4, 27], [2, 3, 28], [3, 2, 29]], c, 'hairb');
+        for (let y = 4; y <= 19; y++) b.srow(y, 1 + (y > 16 ? 1 : 0), 7, c, 'hairb');
+        b.srow(20, 3, 7, c, 'hairb'); b.srow(21, 4, 7, c, 'hairb');
+        break;
+      case 'locs':
+        for (let y = 8; y <= 30; y++) {
+          [3, 5].forEach((x, k) => { if (y <= 26 + k * 3) { b.set(x, y, (y + k) % 3 ? c : sd, 'hairb'); b.set(31 - x, y, (y + k) % 3 ? c : sd, 'hairb'); } });
+          if (y <= 28) { b.set(4, y, sd, 'hairb'); b.set(27, y, sd, 'hairb'); }
+        }
         break;
       case 'chignon':
         b.spans([[0, 13, 18], [1, 12, 19], [2, 12, 19], [3, 13, 18]], c, 'hairb');
@@ -414,6 +471,43 @@
           }
         }
         break;
+      case 'longboucle': case 'afro': {
+        const big = style === 'afro';
+        b.spans([[3, 10, 21], [4, 8, 23], [5, 7, 24], [6, 6, 25], [7, 6, 25], [8, 6, 25], [9, 6, 25]], c, 'hair');
+        b.row(10, 6, 8, c, 'hair'); b.row(10, 10, 12, c, 'hair'); b.row(10, 14, 17, c, 'hair'); b.row(10, 19, 21, c, 'hair'); b.row(10, 23, 25, c, 'hair');
+        b.srow(11, 6, 7, c, 'hair');
+        if (!big) {
+          for (let y = 12; y <= 24; y++) b.srow(y, (Math.floor(y / 2) % 2) ? 5 : 6, 7, c, 'hair');
+          for (let y = 25; y <= 32; y++) b.srow(y, (Math.floor(y / 2) % 2) ? 4 : 5, 8 - (y > 30 ? 1 : 0), c, 'hair');
+        } else { b.srow(12, 6, 7, c, 'hair'); b.srow(13, 6, 6, c, 'hair'); }
+        for (let y = -2; y <= 34; y++) for (let x = 0; x <= 31; x++) {
+          const L = b.get(x, y);
+          if ((L === 'hair' || L === 'hairb') && ((x * 5 + y * 3) % 7 === 0)) b.set(x, y, lt, L);
+          else if ((L === 'hair' || L === 'hairb') && ((x * 3 + y * 5) % 9 === 0)) b.set(x, y, sd, L);
+        }
+        break;
+      }
+      case 'locs':
+        cap();
+        [[6, 18], [8, 13], [10, 11], [13, 12], [16, 11], [19, 12], [21, 11], [23, 13], [25, 18]].forEach(([x, len], k) => {
+          for (let y = 9; y <= len; y++) { b.set(x, y, (y + k) % 3 ? c : sd, 'hair'); if (x === 6 || x === 25) b.set(x === 6 ? 7 : 24, y, sd, 'hair'); }
+        });
+        for (let y = 19; y <= 30; y++) { b.srow(y, 5, 6, (y % 3) ? c : sd, 'hair'); }
+        break;
+      case 'tresse':
+        cap();
+        b.row(10, 6, 11, c, 'hair'); b.row(10, 22, 25, c, 'hair'); b.row(11, 6, 8, c, 'hair'); b.row(11, 24, 25, c, 'hair');
+        b.srow(12, 6, 7, c, 'hair'); b.row(13, 24, 25, c, 'hair');
+        b.row(8, 12, 18, lt, 'hair');
+        // tresse sur l'épaule droite
+        for (let y = 14; y <= 33; y++) {
+          const k = y % 4;
+          b.row(y, 24, 26, c, 'hair');
+          if (k === 0) { b.set(24, y, sd, 'hair'); b.set(26, y, lt, 'hair'); }
+          if (k === 2) { b.set(26, y, sd, 'hair'); b.set(24, y, lt, 'hair'); }
+        }
+        b.row(34, 24, 26, P_ACC_FOR_TIE, 'hair'); b.row(35, 24, 26, c, 'hair'); b.set(25, 36, c, 'hair');
+        break;
       case 'rase':
         b.spans([[7, 11, 20], [8, 9, 22], [9, 8, 23]], mix(c, P_SKIN_FOR_RASE, 0.35), 'hair');
         b.srow(10, 7, 8, mix(c, P_SKIN_FOR_RASE, 0.45), 'hair');
@@ -424,6 +518,7 @@
     }
   }
   let P_SKIN_FOR_RASE = '#f7cba6';
+  let P_ACC_FOR_TIE = '#d9544f';
 
   // ombre des cheveux sur le front + col sur la peau
   function autoShade(b, P) {
@@ -570,25 +665,56 @@
   }
 
   // ---------- Lunettes ----------
-  function drawGlasses(b, kind) {
+  function drawGlasses(b, kind, P, color) {
     if (kind === 'aucune') return;
-    const F = '#2c2833';
-    EX.forEach(ex => {
-      if (kind === 'rondes') {
-        b.row(13, ex, ex + 1, F, 'glass'); b.row(17, ex, ex + 1, F, 'glass');
-        for (let y = 14; y <= 16; y++) { b.set(ex - 1, y, F, 'glass'); b.set(ex + 2, y, F, 'glass'); }
-      } else if (kind === 'carrees') {
-        b.row(13, ex - 1, ex + 2, F, 'glass'); b.row(17, ex - 1, ex + 2, F, 'glass');
-        for (let y = 14; y <= 16; y++) { b.set(ex - 1, y, F, 'glass'); b.set(ex + 2, y, F, 'glass'); }
-      } else if (kind === 'soleil') {
-        b.row(13, ex - 1, ex + 2, F, 'glass');
-        for (let y = 14; y <= 16; y++) b.row(y, ex - 1, ex + 2, '#2f2a3a', 'glass');
-        b.row(17, ex, ex + 1, '#2f2a3a', 'glass');
-        b.set(ex, 14, '#8a7fb0', 'glass'); b.set(ex - 1, 14, '#5b5378', 'glass');
+    const F = color || '#2c2833';
+    const big = kind === 'grosses';
+    // cadres : [x1, x2, y1, y2] pour l'œil gauche, symétriques à droite
+    const box = big ? [8, 14, 11, 18] : [9, 13, 12, 17];
+    const [x1, x2, y1, y2] = box;
+    const tint = mix(P.skin, '#dff1ff', 0.35);
+    const sides = [[x1, x2], [31 - x2, 31 - x1]];
+    sides.forEach(([a, z]) => {
+      // verre : légère teinte sur la peau
+      for (let y = y1 + 1; y < y2; y++) for (let x = a + 1; x < z; x++) {
+        if (kind === 'soleil') b.set(x, y, '#2f2a3a', 'glass');
+        else if (b.get(x, y) === 'skin') b.set(x, y, tint, 'glass');
       }
+      // monture
+      const round = kind === 'rondes';
+      for (let x = a; x <= z; x++) {
+        if (round && (x === a || x === z)) continue;
+        b.set(x, y1, F, 'glass'); b.set(x, y2, F, 'glass');
+        if (big) b.set(x, y1 + 1, shade(F, 0.15), 'glass');
+      }
+      for (let y = y1; y <= y2; y++) {
+        if (round && (y === y1 || y === y2)) continue;
+        b.set(a, y, F, 'glass'); b.set(z, y, F, 'glass');
+      }
+      // reflet
+      if (kind === 'soleil') { b.set(a + 1, y1 + 1, '#8a7fb0', 'glass'); b.set(a + 2, y1 + 1, '#5b5378', 'glass'); }
+      else b.set(z - 1, y1 + 1, '#ffffff', 'glass');
     });
-    b.row(14, 14, 17, F, 'glass');
-    b.set(7, 14, F, 'glass'); b.set(24, 14, F, 'glass');
+    // pont et branches
+    b.row(y1 + 2, x2 + 1, 30 - x2, F, 'glass');
+    b.row(y1 + 1, 7, x1 - 1, F, 'glass'); b.row(y1 + 1, 32 - x1, 24, F, 'glass');
+  }
+
+  function drawDetails(b, kind, P) {
+    const s = P.skin;
+    if (kind === 'rousseur') {
+      const c = mix(s, '#a0522d', 0.45);
+      [[9, 17], [11, 18], [10, 19], [12, 17]].forEach(([x, y]) => { b.set(x, y, c, 'skin'); b.set(31 - x, y, c, 'skin'); });
+      b.set(15, 17, c, 'skin'); b.set(16, 18, c, 'skin');
+    } else if (kind === 'grain') {
+      b.set(21, 19, mix(s, '#3a2222', 0.7), 'skin');
+    } else if (kind === 'joues') {
+      const c = mix(s, '#ff6f8f', 0.28);
+      b.row(18, 8, 10, c, 'skin'); b.row(18, 21, 23, c, 'skin'); b.row(17, 8, 9, c, 'skin'); b.row(17, 22, 23, c, 'skin');
+    } else if (kind === 'cernes') {
+      const c = mix(s, '#6a4a7a', 0.25);
+      b.row(17, 11, 12, c, 'skin'); b.row(17, 19, 20, c, 'skin');
+    }
   }
 
   // ---------- Accessoires ----------
@@ -634,6 +760,19 @@
       b.row(7, 19, 20, sd, 'hat'); b.row(7, 24, 25, sd, 'hat');
       b.set(22, 5, sd, 'hat'); b.set(22, 4, sd, 'hat'); b.set(22, 6, sd, 'hat');
       b.set(20, 4, lt, 'hat');
+    } else if (kind === 'echarpe') {
+      const dy = b.dy; b.dy = 0;
+      b.row(23, 11, 20, col, 'hat'); b.row(24, 9, 22, col, 'hat'); b.row(25, 9, 22, col, 'hat'); b.row(26, 10, 21, sd, 'hat');
+      for (let x = 10; x <= 21; x += 3) { b.set(x, 24, lt, 'hat'); b.set(x + 1, 25, lt, 'hat'); }
+      for (let y = 27; y <= 35; y++) b.row(y, 18, 20, y % 3 === 0 ? lt : col, 'hat');
+      b.set(18, 36, sd, 'hat'); b.set(20, 36, sd, 'hat');
+      b.dy = dy;
+    } else if (kind === 'bob') {
+      for (let y = -2; y < 8; y++) for (let x = 0; x < 32; x++) { const L = b.get(x, y); if (L === 'hair' || (L === 'hairb' && hairStyle === 'chignon')) b.del(x, y); }
+      b.spans([[2, 10, 21], [3, 8, 23], [4, 8, 23], [5, 7, 24], [6, 7, 24], [7, 7, 24]], col, 'hat');
+      b.row(8, 4, 27, sd, 'hat'); b.row(9, 3, 28, sd, 'hat');
+      b.row(7, 7, 24, shade(col, 0.4), 'hat');
+      b.row(3, 11, 14, lt, 'hat');
     } else if (kind === 'boucles') {
       const g = '#f2c84b';
       b.row(18, 5, 6, g, 'hat'); b.row(18, 25, 26, g, 'hat'); b.set(5, 19, '#d9a92c', 'hat'); b.set(26, 19, '#d9a92c', 'hat'); b.set(5, 20, g, 'hat'); b.set(26, 20, g, 'hat');
@@ -754,7 +893,7 @@
     look = Object.assign({}, DEFAULT_LOOK, look || {});
     state = state || {};
     const P = palette(look);
-    P_SKIN_FOR_RASE = P.skin;
+    P_SKIN_FOR_RASE = P.skin; P_ACC_FOR_TIE = P.acc;
     const emo = EMOTIONS[state.emotion] || EMOTIONS.neutre;
     const t = state.t || 0;
     const b = new Buf();
@@ -774,6 +913,7 @@
     b.dx = head[0]; b.dy = head[1];
     drawHead(b, P);
     drawBeard(b, look.beard, P);
+    drawDetails(b, look.details, P);
     drawBlush(b, emo.blush, P);
     let mouth = emo.mouth;
     if (state.talking) mouth = (Math.floor(t / 2) % 3 === 0) ? emo.mouth : (Math.floor(t / 2) % 3 === 1 ? 'talk' : 'talk2');
@@ -783,7 +923,7 @@
     hairFront(b, look.hair, P.hair);
     // la grande barbe passe devant le col
     if (look.beard === 'longue') { b.dx = head[0]; b.dy = head[1]; }
-    drawGlasses(b, look.glasses);
+    drawGlasses(b, look.glasses, P, colorOf(GLASS_COLORS, look.glassesColor));
     drawAccessory(b, look.acc, P.acc, look.hair);
     b.dx = 0; b.dy = 0;
     autoShade(b, P);
@@ -844,7 +984,7 @@
     render, draw, randomLook, Animator, mix, shade, light,
     describe(look) {
       look = Object.assign({}, DEFAULT_LOOK, look || {});
-      return FIELDS.filter(f => !['skin', 'eyes', 'topColor', 'accColor'].includes(f.key))
+      return FIELDS.filter(f => !['skin', 'eyes', 'topColor', 'accColor', 'glassesColor', 'details'].includes(f.key))
         .map(f => f.nom + ' : ' + pick(f.list, look[f.key]).nom.toLowerCase()).join(', ');
     }
   };

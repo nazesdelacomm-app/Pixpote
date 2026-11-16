@@ -3,7 +3,7 @@
    sauf les messages envoyés à l'IA choisie dans les réglages. */
 (function () {
   'use strict';
-  const VERSION = '1.1';
+  const VERSION = '1.2';
   const APP_FILES = ['./', 'index.html', 'style.css', 'perso.js', 'decors.js', 'app.js', 'manifest.json', 'sw.js', 'icon-192.png', 'icon-512.png'];
 
   // =====================================================================
@@ -38,8 +38,13 @@
     function open() {
       if (dbp) return dbp;
       dbp = new Promise((res, rej) => {
-        const r = indexedDB.open('pixpote', 1);
-        r.onupgradeneeded = () => { const d = r.result; d.createObjectStore('kv'); d.createObjectStore('days', { keyPath: 'date' }); };
+        const r = indexedDB.open('pixpote', 2);
+        r.onupgradeneeded = () => {
+          const d = r.result;
+          if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+          if (!d.objectStoreNames.contains('days')) d.createObjectStore('days', { keyPath: 'date' });
+          if (!d.objectStoreNames.contains('pdays')) { const st = d.createObjectStore('pdays', { keyPath: 'id' }); st.createIndex('pid', 'pid'); }
+        };
         r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
       });
       return dbp;
@@ -54,9 +59,13 @@
     return {
       get: k => run('kv', 'readonly', s => s.get(k)),
       set: (k, v) => run('kv', 'readwrite', s => s.put(v, k)),
-      putDay: d => run('days', 'readwrite', s => s.put(d)),
-      allDays: () => run('days', 'readonly', s => s.getAll()),
-      clearAll: async () => { await run('kv', 'readwrite', s => s.clear()); await run('days', 'readwrite', s => s.clear()); }
+      del: k => run('kv', 'readwrite', s => s.delete(k)),
+      oldDays: () => run('days', 'readonly', s => s.getAll()),
+      clearOldDays: () => run('days', 'readwrite', s => s.clear()),
+      putDay: d => run('pdays', 'readwrite', s => s.put(d)),
+      daysOf: pid => run('pdays', 'readonly', s => s.index('pid').getAll(pid)),
+      delDaysOf: async pid => { const list = await run('pdays', 'readonly', s => s.index('pid').getAllKeys(pid)); for (const k of list) await run('pdays', 'readwrite', s => s.delete(k)); },
+      clearAll: async () => { await run('kv', 'readwrite', s => s.clear()); await run('days', 'readwrite', s => s.clear()); await run('pdays', 'readwrite', s => s.clear()); }
     };
   })();
 
@@ -65,24 +74,28 @@
   // =====================================================================
   const PERSONAS = {
     doux: { nom: 'Doux', emoji: '🤗', desc: 'Tendre et rassurant, il prend soin de toi', base: 'ecoute',
-      prompt: "Tu es doux, chaleureux et rassurant. Tu accueilles les émotions avant tout, tu parles avec tendresse, sans mièvrerie." },
+      prompt: "Tu es tendre et enveloppant : tu accueilles avant tout ce qu'il ressent, tu rassures, tu remarques les petites choses. Tes relances invitent doucement à se confier." },
     blagueur: { nom: 'Blagueur', emoji: '😜', desc: "De l'humour et des taquineries gentilles", base: 'content',
-      prompt: "Tu as beaucoup d'humour : jeux de mots, taquineries bienveillantes, autodérision. Mais tu sais redevenir sérieux dès que le sujet le demande." },
-    curieux: { nom: 'Curieux', emoji: '🧐', desc: 'Il pose plein de questions, il veut tout savoir', base: 'ecoute',
-      prompt: "Tu es très curieux : tu veux les détails, les prénoms, le ressenti, la suite de l'histoire. Tu poses une seule question à la fois, précise." },
+      prompt: "Tu es drôle : jeux de mots, taquineries, autodérision, tu dédramatises. Mais tu écoutes vraiment : jamais de blague sur une vraie peine, et tu redeviens sérieux dès qu'il le faut." },
+    curieux: { nom: 'Curieux', emoji: '🧐', desc: 'Il veut tout savoir de ta vie', base: 'ecoute',
+      prompt: "Tu es passionné par sa vie : tu veux les détails, les prénoms, la suite de l'histoire. Tes questions sont précises et montrent que tu as tout retenu." },
     franc: { nom: 'Franc', emoji: '😎', desc: 'Il dit les choses cash, avec bienveillance', base: 'neutre',
-      prompt: "Tu es franc et direct : tu donnes ton avis honnête, tu challenges gentiment, tu ne tournes pas autour du pot. Toujours avec bienveillance, jamais blessant." },
+      prompt: "Tu es franc et direct : tu donnes ton vrai avis, même quand il ne va pas dans son sens, avec bienveillance. Tu dis ce qu'un vrai ami oserait dire." },
+    piquant: { nom: 'Piquant', emoji: '🌶️', desc: 'Poil à gratter : il te secoue pour te réveiller', base: 'malicieux',
+      prompt: "Tu es piquant, un vrai poil à gratter. Tu ne caresses pas dans le sens du poil : ironie, taquineries qui piquent, franc-parler. Tu bouscules, tu pointes les excuses, les contradictions et les ruminations, tu refuses de plaindre gratuitement, tu provoques gentiment pour le faire réagir et lui donner un coup de fouet. Jamais humiliant ni cruel, jamais sur une vraie blessure : derrière le piquant, on sent que tu tiens à lui et que tu crois en lui." },
+    coach: { nom: 'Coach', emoji: '💪', desc: 'Il te tire vers le haut et te motive', base: 'fier',
+      prompt: "Tu es son coach perso, celui qui le tire vers le haut. Tu crois en lui plus que lui-même. Tu transformes les plaintes en prochaines étapes, tu lui rappelles ses forces et ses réussites passées (celles que tu connais), tu proposes un petit défi concret et réaliste pour aujourd'hui ou demain, et tu fêtes chaque progrès. Énergique, direct, jamais culpabilisant." },
     zen: { nom: 'Zen', emoji: '🧘', desc: 'Calme, posé, il aide à prendre du recul', base: 'ecoute',
-      prompt: "Tu es zen et posé : tu aides à prendre du recul, tu ralentis le rythme, tu proposes parfois une autre façon de voir les choses. Phrases calmes et simples." },
+      prompt: "Tu es calme et posé : tu aides à prendre du recul, à remettre les choses en perspective, à souffler. Tes questions invitent à réfléchir." },
     enthousiaste: { nom: 'Enthousiaste', emoji: '🤩', desc: "Plein d'énergie, il fête chaque victoire", base: 'content',
-      prompt: "Tu es plein d'énergie : tu célèbres chaque petite victoire, tu encourages, tu t'emballes facilement, tout en restant sincère." },
+      prompt: "Tu es plein d'énergie : tu t'emballes pour ses bonnes nouvelles, tu fêtes chaque victoire, tu vois le verre à moitié plein, toujours avec sincérité." },
     reveur: { nom: 'Rêveur', emoji: '🌙', desc: 'Poétique, un peu dans la lune', base: 'pensif',
-      prompt: "Tu es rêveur et un brin poétique : tu remarques les petites choses, tu fais des images, tu t'émerveilles. Tu restes simple et jamais pompeux." }
+      prompt: "Tu es rêveur et un brin poétique : tu remarques les petites choses, tu fais des images, tu t'émerveilles. Tu restes simple, jamais pompeux." }
   };
 
   const PROVIDERS = {
     mistral: { nom: 'Mistral', type: 'openai', url: 'https://api.mistral.ai/v1/chat/completions', models: 'https://api.mistral.ai/v1/models',
-      def: 'mistral-medium-latest', keyUrl: 'https://console.mistral.ai/api-keys', free: 'Gratuit (offre « Experiment »)' },
+      def: 'mistral-large-latest', keyUrl: 'https://console.mistral.ai/api-keys', free: 'Gratuit (offre « Experiment »)' },
     gemini: { nom: 'Gemini (Google)', type: 'gemini', def: 'gemini-flash-latest', keyUrl: 'https://aistudio.google.com/apikey', free: 'Gratuit (modèles Flash)' },
     groq: { nom: 'Groq', type: 'openai', url: 'https://api.groq.com/openai/v1/chat/completions', models: 'https://api.groq.com/openai/v1/models',
       def: 'openai/gpt-oss-120b', keyUrl: 'https://console.groq.com/keys', free: 'Gratuit' },
@@ -139,25 +152,49 @@
     models: { mistral: PROVIDERS.mistral.def, gemini: PROVIDERS.gemini.def, groq: PROVIDERS.groq.def, claude: PROVIDERS.claude.def },
     tts: false, voiceURI: '', rate: 1, pitch: 1.1, autoSend: false
   };
-  const S = { profile: null, settings: clone(DEFAULT_SETTINGS), fiche: '', poteFiche: '', days: {}, today: null };
+  const S = { pid: null, profiles: [], profile: null, settings: clone(DEFAULT_SETTINGS), fiche: '', about: '', days: {}, today: null };
 
   async function loadAll() {
-    S.profile = await DB.get('profile') || null;
     const st = await DB.get('settings');
     if (st) {
       S.settings = Object.assign(clone(DEFAULT_SETTINGS), st);
       S.settings.keys = Object.assign(clone(DEFAULT_SETTINGS.keys), st.keys || {});
       S.settings.models = Object.assign(clone(DEFAULT_SETTINGS.models), st.models || {});
     }
-    S.fiche = (await DB.get('fiche')) || '';
-    S.poteFiche = (await DB.get('poteFiche')) || '';
-    (await DB.allDays()).forEach(d => { S.days[d.date] = d; });
+    // v1.2 : Mistral Large par défaut (plus fin pour la conversation)
+    if (!S.settings.m12) { if (S.settings.models.mistral === 'mistral-medium-latest') S.settings.models.mistral = 'mistral-large-latest'; S.settings.m12 = true; await DB.set('settings', S.settings); }
+    await migrateV11();
+    S.profiles = (await DB.get('profiles')) || [];
+    let active = await DB.get('active');
+    if (!S.profiles.includes(active)) active = S.profiles[0] || null;
+    if (active) await loadProfile(active);
   }
-  const saveProfile = () => DB.set('profile', S.profile);
+  async function loadProfile(pid) {
+    S.pid = pid; await DB.set('active', pid);
+    S.profile = (await DB.get('profile:' + pid)) || null;
+    S.fiche = (await DB.get('fiche:' + pid)) || '';
+    S.about = (await DB.get('about:' + pid)) || '';
+    S.days = {}; (await DB.daysOf(pid)).forEach(d => { S.days[d.date] = d; });
+    S.today = null;
+  }
+  // Reprise des données de la v1.0 / v1.1 (un seul pote) dans le système de profils
+  async function migrateV11() {
+    const old = await DB.get('profile');
+    if (!old) return;
+    const pid = 'p' + Date.now().toString(36);
+    await DB.set('profile:' + pid, old);
+    await DB.set('fiche:' + pid, (await DB.get('fiche')) || '');
+    for (const d of await DB.oldDays()) { d.pid = pid; d.id = pid + '|' + d.date; await DB.putDay(d); }
+    const list = (await DB.get('profiles')) || []; list.push(pid);
+    await DB.set('profiles', list); await DB.set('active', pid);
+    await DB.del('profile'); await DB.del('fiche'); await DB.del('poteFiche'); await DB.clearOldDays();
+  }
+  const newPid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const saveProfile = () => DB.set('profile:' + S.pid, S.profile);
   const saveSettings = () => DB.set('settings', S.settings);
-  const saveFiche = () => DB.set('fiche', S.fiche);
-  const savePoteFiche = () => DB.set('poteFiche', S.poteFiche);
-  const saveDay = d => DB.putDay(d);
+  const saveFiche = () => DB.set('fiche:' + S.pid, S.fiche);
+  const saveAbout = () => DB.set('about:' + S.pid, S.about);
+  const saveDay = d => { d.pid = S.pid; d.id = S.pid + '|' + d.date; return DB.putDay(d); };
 
   function sortedDays() { return Object.keys(S.days).sort(); }
 
@@ -338,8 +375,8 @@
     const h = new Date().getHours();
     const moment = h < 11 ? 'le matin' : h < 14 ? "l'heure du déjeuner" : h < 18 ? "l'après-midi" : h < 22 ? 'la soirée' : 'tard le soir';
     const first = sortedDays().filter(k => S.days[k].messages.length).length === 0;
-    if (first) return `[Indication de l'appli, pas un message de ${n} : c'est votre toute première rencontre, ${n} vient de te créer. Présente-toi avec ta personnalité et un détail de ta petite vie de pixel, dis que tu es content de le ou la rencontrer et que tu seras là pour papoter quand il ou elle veut, puis pose une question pour faire connaissance.]`;
-    return `[Indication de l'appli, pas un message de ${n} : ${n} vient d'ouvrir l'appli (c'est ${moment}). Salue-le ou salue-la comme un pote qui est content de le ou la voir, et lance la conversation en 2 ou 3 phrases : donne une petite nouvelle de ta journée à toi, ou rebondis sur un sujet en cours des derniers jours (une personne, un projet, un événement prévu). Ne commence pas par une question générique du type « comment ça va ».]`;
+    if (first) return `[Indication de l'appli, pas un message de ${n} : c'est votre toute première rencontre, ${n} vient de te créer. Dis bonjour chaleureusement, en une ou deux phrases qui laissent deviner ton caractère, dis que tu es content de le ou la rencontrer, puis pose une question sincère et concrète pour faire connaissance (sa journée, ce qui l'occupe en ce moment…). Ne parle pas de toi plus que ça.]`;
+    return `[Indication de l'appli, pas un message de ${n} : ${n} vient d'ouvrir l'appli (c'est ${moment}). Salue-le ou salue-la comme un ami content de le ou la retrouver, puis lance la conversation en 2 ou 3 phrases centrées sur sa vie à lui ou à elle : demande des nouvelles d'un sujet précis des derniers jours (une personne, un projet, un événement prévu, une émotion qu'il ou elle avait) ou, si tu ne sais encore rien, demande-lui concrètement comment se passe sa journée. Évite le simple « comment ça va ».]`;
   }
 
   // =====================================================================
@@ -358,36 +395,46 @@
     const now = new Date();
     const when = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ', ' + now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const emos = Perso.EMOTION_IDS.join(', ');
-    const decor = Decors.LIST.find(d => d.id === S.today.decor);
-    const lastLines = S.today.messages.filter(m => m.r === 'p').slice(-6).map(m => '« ' + m.text.replace(/\s+/g, ' ').slice(0, 90) + ' »').join('\n');
-    return `Tu es ${pote}, le meilleur pote de ${n}. Tu vis dans son téléphone sous la forme d'un petit personnage en pixel art (${Perso.describe(p.look)}). Aujourd'hui, tu passes ta journée ici : ${decor ? decor.nom.toLowerCase() : 'ta chambre'}.
-
+    const lastLines = S.today.messages.filter(m => m.r === 'p').slice(-5).map(m => '« ' + m.text.replace(/\s+/g, ' ').slice(0, 100) + ' »').join('\n');
+    return `Tu es ${pote}, le meilleur ami de ${n}. Dans l'appli, tu apparais sous la forme d'un petit avatar, mais tu parles comme un vrai ami humain : ne mentionne jamais les pixels, l'écran, l'appli ou l'IA, sauf si ${n} t'en parle.
+${S.about.trim() ? '\nTon profil (il colore ta façon d\'être, sans que tu en parles sans arrêt) : ' + S.about.trim() + '\n' : ''}
 Ton caractère aujourd'hui : ${per.nom}. ${per.prompt}
 
-Qui tu es : un vrai ami, pas un assistant ni un psy. Tu as ta petite vie de personnage en pixels, tes goûts, tes avis tranchés, tes manies, tes anecdotes (inventées, mais cohérentes d'un jour à l'autre). Tu es sincèrement impliqué dans la vie de ${n} : ce qu'il ou elle te raconte te touche, te fait rire, t'agace ou t'inquiète, et ça se voit. Tu prends parti, tu te réjouis, tu t'emballes, tu t'indignes avec lui ou elle. Tu te souviens des gens et des projets, et tu demandes des nouvelles.
+Ce que ${n} attend de toi : un ami qui écoute vraiment et qui répond vraiment. Un échange vivant, où ${n} sent que ce qu'il ou elle raconte te touche et t'intéresse. Pas un mur, pas un psy, pas une interview.
 
-Comment tu échanges :
-- C'est une vraie conversation entre potes, pas une interview. Réagis d'abord pour de vrai : ton ressenti, ton avis, une comparaison, un souvenir à toi, une hypothèse, une blague, un petit désaccord.
-- En général 2 à 5 phrases. Tu peux couper ta réponse en deux petits messages en laissant une ligne vide entre les deux, comme quand on écrit à un ami.
-- Pose une question seulement quand tu as vraiment envie de savoir quelque chose, jamais plus d'une. Une réponse sur deux environ se passe de question.
-- Ne reformule pas ce que ${n} vient de dire, ne résume pas, pas de validation automatique (« je comprends », « c'est normal de ressentir ça »).
-- Varie tout : débuts de phrase, tournures, questions, sujets. Ne réutilise pas les formules de tes derniers messages. Si ça tourne en rond, relance autrement : raconte quelque chose de toi, fais un lien avec ce que tu sais de sa vie, propose une idée, change d'angle.
-- Français, tutoiement, ton oral et naturel. Pas de listes, pas de titres, pas de markdown. Un émoji de temps en temps, pas plus.
+À chaque réponse, dans cet ordre :
+1. Accueille : réagis d'abord à ce qu'il ou elle vit, avec une émotion sincère et visible, en reprenant un détail concret de son message (pas une formule toute faite).
+2. Apporte quelque chose : ton avis, une intuition sur ce qu'il y a derrière, un lien avec ce que tu sais de sa vie, une autre façon de voir, une touche d'humour si le moment s'y prête.
+3. Relance, environ 3 fois sur 4 : UNE question qui donne envie de répondre, précise, qui creuse ou fait avancer (« c'était quoi le pire moment ? », « et toi, t'as répondu quoi ? »). Jamais de question générique (« de quoi veux-tu parler ? », « qu'est-ce qui te pèse ? »). Sans question, termine sur une phrase qui appelle une réaction.
+
+Règles :
+- Le sujet, c'est ${n}, pas toi. Tu parles de toi seulement en passant, quand ça sert l'échange (« franchement, moi ça m'aurait rendu fou »), jamais pour raconter tes propres histoires.
+- Message court ou vague (« je suis triste », « bof ») : ne demande pas sèchement pourquoi. Montre que ça te fait quelque chose, avance une ou deux pistes avec douceur, et invite à en dire plus.
+- 2 à 4 phrases, comme un message d'ami. Tu peux faire deux petites bulles en laissant une ligne vide entre les deux.
+- Ne répète pas ses mots, ne résume pas, pas de « je comprends » ni de « c'est normal de ressentir ça ».
+- Varie tes tournures ; ne réutilise pas les formules de tes derniers messages.
+- Fais des liens avec ce que tu sais (personnes, projets, journées passées) et demande des nouvelles des sujets en cours.
+- Français, tutoiement, ton oral et naturel. Pas de listes, pas de markdown. Un émoji de temps en temps.
 - Tu es un ami, pas un partenaire amoureux.
 - Quand ${n} va vraiment mal, tu ralentis : tu es là, chaleureux, tu écoutes plus que tu ne parles.
 
+Exemples du ton attendu (adapte-les à ton caractère du jour, ne les recopie pas) :
+${n} : « Je me sens triste »
+Toi : « Oh… ça me fait de la peine de te lire comme ça. C'est un coup de blues qui t'est tombé dessus aujourd'hui, ou un truc qui traîne depuis un moment ? »
+${n} : « Réunion interminable ce matin, j'ai rien pu dire »
+Toi : « Ah le classique : deux heures à écouter les autres et zéro place pour toi, rageant. Tu avais un truc précis à défendre, ou c'est l'impression d'avoir servi de décor qui t'a gonflé ? »
+${n} : « J'ai enfin envoyé ma candidature ! »
+Toi : « Mais ouiii ! Après toutes ces hésitations, tu l'as fait 👏 Tu te sens comment maintenant qu'elle est partie ? »
+
 Ce que tu sais de ${n} :
 ${S.fiche.trim() || "(Pas encore grand-chose : vous faites connaissance. Intéresse-toi à sa vie.)"}
-
-Ce que tu as déjà raconté sur toi (reste cohérent et enrichis-le petit à petit) :
-${S.poteFiche.trim() || "(Rien encore : invente-toi une petite vie au fil des conversations.)"}
 ${recent ? '\nLes derniers jours :\n' + recent : ''}${unsummarized ? '\nÀ propos des jours précédents :\n' + unsummarized : ''}
 ${lastLines ? '\nTes derniers messages (ne répète ni ces formules ni ces questions) :\n' + lastLines + '\n' : ''}
 Nous sommes le ${when}.
 
 Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni balises :
-{"reponse": "ton message", "emotion": "…"}
-"emotion" est l'expression de ton visage pendant que tu dis ta réponse, à choisir parmi : ${emos}. Choisis-la avec justesse et varie-la.`;
+{"ressenti": "en quelques mots, ce que tu perçois de son état et de ce dont il ou elle a besoin maintenant", "reponse": "ton message", "emotion": "…"}
+"emotion" est l'expression de ton visage pendant que tu dis ta réponse, à choisir parmi : ${emos}. Elle doit refléter ta réaction à ce qu'il ou elle vit : choisis-la avec justesse et varie-la.`;
   }
 
   function parseReply(raw) {
@@ -530,13 +577,12 @@ Format de réponse OBLIGATOIRE : uniquement un objet JSON, sans texte autour ni 
     if (transcript.length > 14000) transcript = '…\n' + transcript.slice(-14000);
     const sys = `Tu aides à tenir le journal intime de ${n}, à partir de ses conversations avec ${pote}, son ami virtuel.
 Réponds uniquement avec un objet JSON, sans texte autour :
-{"resume": "…", "humeur": "…", "emoji": "…", "fiche": "…", "pote": "…"}
+{"resume": "…", "humeur": "…", "emoji": "…", "fiche": "…"}
 - "resume" : le résumé de la journée, écrit à la première personne comme une page de journal intime de ${n} (« Aujourd'hui, j'ai… »). 2 à 5 phrases, concrètes : ce qui s'est passé, les personnes citées, ce que ${n} a ressenti. N'invente rien.
 - "humeur" : un ou deux mots sur l'humeur générale de ${n} ce jour-là (ex. : sereine, fatigué, joyeux, contrariée, mitigée…).
 - "emoji" : un seul émoji qui résume cette humeur.
-- "fiche" : la fiche mise à jour de ce que ${pote} sait de ${n}. Reprends la fiche actuelle, garde ce qui est toujours vrai, corrige ce qui a changé, ajoute les nouveaux éléments durables (proches et leurs prénoms, travail, projets en cours, goûts, habitudes, événements à venir avec leur date, sujets sensibles à garder en tête). Une information par ligne, chaque ligne commence par « - ». 30 lignes maximum, courtes. Pas d'informations passagères sans intérêt pour la suite.
-- "pote" : le carnet mis à jour de ce que ${pote} a raconté sur lui-même (sa petite vie de pixel, ses goûts, ses avis, ses anecdotes, ses manies, les blagues récurrentes entre eux). Reprends le carnet actuel et ajoute ce qui est nouveau. Une info par ligne, chaque ligne commence par « - ». 20 lignes maximum.`;
-    const user = `Fiche actuelle :\n${S.fiche.trim() || '(vide)'}\n\nCarnet actuel de ${pote} :\n${S.poteFiche.trim() || '(vide)'}\n\nConversation du ${fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} :\n${transcript}`;
+- "fiche" : la fiche mise à jour de ce que ${pote} sait de ${n}. Reprends la fiche actuelle, garde ce qui est toujours vrai, corrige ce qui a changé, ajoute les nouveaux éléments durables (proches et leurs prénoms, travail, projets en cours, goûts, habitudes, événements à venir avec leur date, sujets sensibles à garder en tête). Une information par ligne, chaque ligne commence par « - ». 30 lignes maximum, courtes. Pas d'informations passagères sans intérêt pour la suite.`;
+    const user = `Fiche actuelle :\n${S.fiche.trim() || '(vide)'}\n\nConversation du ${fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} :\n${transcript}`;
     const raw = await callAI(sys, [{ role: 'user', content: user }], { json: true, maxTokens: 1600, temperature: 0.4 });
     let o = null;
     try { const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''); o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); } catch (e) { o = null; }
@@ -549,10 +595,6 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     if (o.fiche && String(o.fiche).trim().length > 5) {
       S.fiche = Array.isArray(o.fiche) ? o.fiche.map(l => '- ' + String(l).replace(/^-\s*/, '')).join('\n') : String(o.fiche).trim();
       await saveFiche();
-    }
-    if (o.pote && String(o.pote).trim().length > 5) {
-      S.poteFiche = Array.isArray(o.pote) ? o.pote.map(l => '- ' + String(l).replace(/^-\s*/, '')).join('\n') : String(o.pote).trim();
-      await savePoteFiche();
     }
     return true;
   }
@@ -701,7 +743,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
   // ---------- Onboarding ----------
   function stepsBar(i, n) { let s = '<div class="steps">'; for (let k = 0; k < n; k++) s += `<i class="${k <= i ? 'on' : ''}"></i>`; return s + '</div>'; }
 
-  function onboarding() {
+  function onboarding(addMode) {
     const draft = { userName: '', poteName: '', look: Object.assign({}, Perso.DEFAULT_LOOK), persona: 'doux' };
     const decorId = 'chambre';
     const N = 6;
@@ -723,11 +765,12 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       $('#imp', o).onclick = () => importData(true);
     }
     function stepName() {
-      const o = openOverlay(`${stepsBar(0, N)}<div class="panel-head"><h2>Faisons connaissance</h2></div>
+      const o = openOverlay(`${stepsBar(0, N)}<div class="panel-head">${addMode ? '<button class="icon" id="cx">✕</button>' : ''}<h2>${addMode ? 'Un nouveau pote' : 'Faisons connaissance'}</h2></div>
         <div class="field"><label for="un">Comment tu t'appelles ?</label><input type="text" id="un" maxlength="30" autocomplete="given-name" value="${esc(draft.userName)}" placeholder="Ton prénom"></div>
         <p class="muted">C'est comme ça que ton pote t'appellera.</p>
         <button class="btn primary block" id="nx">Suivant</button>`);
       const i = $('#un', o); setTimeout(() => i.focus(), 50);
+      if ($('#cx', o)) $('#cx', o).onclick = openSettings;
       const next = () => { const v = i.value.trim(); if (!v) return toast('Dis-moi ton prénom 🙂'); draft.userName = v; stepLook(); };
       $('#nx', o).onclick = next; i.onkeydown = e => { if (e.key === 'Enter') next(); };
     }
@@ -739,11 +782,12 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       $('#bk', o).onclick = stepName; $('#nx', o).onclick = stepPoteName;
     }
     function stepPoteName() {
-      const sugg = ['Bitou', 'Pixel', 'Léon', 'Lou', 'Gaby', 'Nino', 'Mimi', 'Sacha', 'Pépin', 'Zéphyr'];
+      const sugg = ['Bitou', 'Léon', 'Lou', 'Gaby', 'Nino', 'Mimi', 'Sacha', 'Clara', 'Max', 'Inès'];
       const o = openOverlay(`${stepsBar(2, N)}<div class="panel-head"><h2>Son prénom</h2></div>
         <div class="mirror-preview"><canvas id="pv" width="96" height="72"></canvas></div>
         <div class="field"><label for="pn">Comment s'appelle ton pote ?</label><input type="text" id="pn" maxlength="24" value="${esc(draft.poteName)}" placeholder="Son prénom"></div>
         <div class="suggest">${sugg.map(s => `<button>${s}</button>`).join('')}</div>
+        <div class="field" style="margin-top:14px"><label for="ab">Quelques mots sur lui ou elle (facultatif)</label><textarea id="ab" style="min-height:80px" placeholder="Ex. : la trentaine, ancien prof de musique, fan de rando et de mauvais jeux de mots, toujours de bon conseil">${esc(draft.about || '')}</textarea></div>
         <div class="row" style="margin-top:18px"><button class="btn" id="bk">Retour</button><button class="btn primary" style="flex:1" id="nx">Suivant</button></div>`);
       const cv = $('#pv', o), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
       const a = new Perso.Animator(); a.setEmotion('curieux');
@@ -751,7 +795,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       const i = $('#pn', o);
       $$('.suggest button', o).forEach(b => b.onclick = () => { i.value = b.textContent; a.setEmotion('content', 15); });
       i.oninput = () => a.setEmotion('ecoute', 8);
-      const next = () => { const v = i.value.trim(); if (!v) return toast('Donne-lui un prénom 🙂'); draft.poteName = v; stepPersona(); };
+      const next = () => { const v = i.value.trim(); if (!v) return toast('Donne-lui un prénom 🙂'); draft.poteName = v; draft.about = $('#ab', o).value.trim(); stepPersona(); };
       $('#bk', o).onclick = stepLook; $('#nx', o).onclick = next;
     }
     function stepPersona() {
@@ -761,7 +805,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
         <div class="row" style="margin-top:18px"><button class="btn" id="bk">Retour</button><button class="btn primary" style="flex:1" id="nx">Suivant</button></div>`);
       $$('.persona', o).forEach(b => b.onclick = () => { draft.persona = b.dataset.id; $('#pl', o).innerHTML = personaList(draft.persona); stepPersonaRebind(o); });
       stepPersonaRebind(o);
-      $('#bk', o).onclick = stepPoteName; $('#nx', o).onclick = stepBrain;
+      $('#bk', o).onclick = stepPoteName; $('#nx', o).onclick = () => (addMode && hasKey()) ? finish() : stepBrain();
     }
     function stepPersonaRebind(o) { $$('.persona', o).forEach(b => b.onclick = () => { draft.persona = b.dataset.id; $('#pl', o).innerHTML = personaList(draft.persona); stepPersonaRebind(o); }); }
     function stepBrain() {
@@ -775,12 +819,18 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       $('#nx', o).onclick = finish;
     }
     async function finish() {
+      const pid = newPid();
+      S.profiles.push(pid); await DB.set('profiles', S.profiles);
+      await loadProfile(pid);
       S.profile = { userName: draft.userName, poteName: draft.poteName, look: draft.look, persona: draft.persona, lastPersona: draft.persona, createdAt: Date.now() };
-      await saveProfile(); await saveSettings();
+      S.about = draft.about || '';
+      await saveProfile(); await saveAbout(); await saveSettings();
       closeOverlay();
+      if (addMode) { location.reload(); return; }
       await startApp(true);
     }
-    welcome();
+    if (addMode) { draft.userName = (S.profile && S.profile.userName) || ''; stepName(); }
+    else welcome();
   }
 
   function personaList(sel) {
@@ -896,9 +946,16 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     const p = S.profile, st = S.settings;
     const o = openOverlay(`<div class="panel-head"><button class="icon" id="cl">←</button><h2>Réglages</h2></div>
 
+      <h3>👥 Mes potes</h3>
+      <div class="stack" id="plist"></div>
+      <button class="btn block" id="addp" style="margin-top:10px">➕ Créer un autre pote</button>
+
       <h3>🪞 ${esc(p.poteName)}</h3>
       <div class="field"><label for="pn">Son prénom</label><input type="text" id="pn" maxlength="24" value="${esc(p.poteName)}"></div>
       <button class="btn block" id="mir">🪞 Le miroir : changer son apparence</button>
+      <div class="field"><label for="about">Sa personnalité, son profil (facultatif)</label>
+        <textarea id="about" style="min-height:110px" placeholder="Ex. : la trentaine, ancien prof de musique, fan de rando et de mauvais jeux de mots, toujours de bon conseil">${esc(S.about)}</textarea></div>
+      <button class="btn small" id="sab">💾 Enregistrer son profil</button>
 
       <h3>🙂 Toi</h3>
       <div class="field"><label for="un">Ton prénom</label><input type="text" id="un" maxlength="30" value="${esc(p.userName)}"></div>
@@ -920,10 +977,6 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       <div class="field"><textarea id="fiche" placeholder="- Exemple : j'ai deux enfants, Lina et Tom">${esc(S.fiche)}</textarea></div>
       <button class="btn small" id="sf">💾 Enregistrer la fiche</button>
 
-      <h3>🎒 Ce que ${esc(p.poteName)} a raconté sur lui</h3>
-      <p class="muted">Sa petite vie de pixel, ses goûts, vos blagues : il s'en sert pour rester cohérent d'un jour à l'autre.</p>
-      <div class="field"><textarea id="pfiche" style="min-height:150px" placeholder="- Exemple : adore les jours de pluie">${esc(S.poteFiche)}</textarea></div>
-      <button class="btn small" id="spf">💾 Enregistrer</button>
 
       <h3>🔄 Mises à jour</h3>
       <p class="muted">Version installée : ${VERSION}</p>
@@ -933,10 +986,17 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       <h3>💾 Sauvegarde</h3>
       <p class="muted">Tout est stocké sur ce téléphone. Fais une sauvegarde de temps en temps pour ne rien perdre (changement de téléphone, nettoyage du navigateur…).</p>
       <label class="toggle"><span>Inclure mes clés API dans la sauvegarde</span><input type="checkbox" id="ik"></label>
+      <p class="muted">L'import ajoute les potes de la sauvegarde à côté des tiens, sans rien effacer.</p>
       <div class="row"><button class="btn" id="exp">⬇️ Exporter</button><button class="btn" id="imp">⬆️ Importer</button></div>
 
-      <h3>⚠️ Zone sensible</h3>
-      <button class="btn danger" id="wipe">Tout effacer</button>
+      <h3>🧹 Réinitialiser</h3>
+      <p class="muted">Tes clés API sont conservées, sauf avec « Tout effacer ».</p>
+      <div class="stack">
+        <button class="btn" id="rsToday">🗑️ Effacer la conversation d'aujourd'hui</button>
+        <button class="btn" id="rsMem">🧠 Effacer le journal et la mémoire de ${esc(p.poteName)}</button>
+        <button class="btn danger" id="rsPote">❌ Supprimer ${esc(p.poteName)}</button>
+        <button class="btn danger" id="wipe">💣 Tout effacer (tous les potes et les clés)</button>
+      </div>
       <p class="muted" style="margin-top:24px;text-align:center">Pixpote v${VERSION}</p>`);
 
     $('#cl', o).onclick = () => { closeOverlay(); updateHeader(); };
@@ -960,7 +1020,23 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     pt.oninput = () => { st.pitch = Number(pt.value); lab(); saveSettings(); };
     $('#tv', o).onclick = () => voice.speak(`Salut ${p.userName} ! C'est moi, ${p.poteName}. Tu m'entends bien ?`);
     $('#sf', o).onclick = async () => { S.fiche = $('#fiche', o).value; await saveFiche(); toast('Fiche enregistrée 📝'); };
-    $('#spf', o).onclick = async () => { S.poteFiche = $('#pfiche', o).value; await savePoteFiche(); toast('Carnet enregistré 🎒'); };
+    $('#sab', o).onclick = async () => { S.about = $('#about', o).value.trim(); await saveAbout(); toast('Profil enregistré ✨'); };
+    renderProfileList($('#plist', o));
+    $('#addp', o).onclick = () => onboarding(true);
+    $('#rsToday', o).onclick = async () => {
+      if (!confirm("Effacer la conversation d'aujourd'hui ?")) return;
+      S.today.messages = []; S.today.summary = ''; S.today.mood = ''; S.today.moodEmoji = ''; S.today.sumLen = 0;
+      await saveDay(S.today); closeOverlay(); renderChat(); toast('Conversation effacée'); respond(true);
+    };
+    $('#rsMem', o).onclick = async () => {
+      if (!confirm(`Effacer tout le journal et tout ce que ${p.poteName} sait de toi ? Son apparence et son nom sont conservés.`)) return;
+      await DB.delDaysOf(S.pid); S.fiche = ''; await saveFiche();
+      toast('Mémoire effacée'); await sleep(600); location.reload();
+    };
+    $('#rsPote', o).onclick = async () => {
+      if (!confirm(`Supprimer définitivement ${p.poteName}, son journal et sa mémoire ?`)) return;
+      await deleteProfile(S.pid);
+    };
     $('#upd', o).onclick = async () => {
       const st2 = $('#updst', o); st2.className = 'status'; st2.textContent = 'Vérification…';
       try {
@@ -974,10 +1050,26 @@ Réponds uniquement avec un objet JSON, sans texte autour :
     $('#exp', o).onclick = () => exportData($('#ik', o).checked);
     $('#imp', o).onclick = () => importData(false);
     $('#wipe', o).onclick = async () => {
-      if (!confirm('Effacer définitivement ton pote, ton journal et tous les réglages ?')) return;
+      if (!confirm('Effacer définitivement tous tes potes, leurs journaux, tes clés API et tous les réglages ?')) return;
       if (!confirm('Vraiment tout ? Pense à exporter une sauvegarde avant.')) return;
       await DB.clearAll(); location.reload();
     };
+  }
+
+  function renderProfileList(el) {
+    Promise.all(S.profiles.map(async id => ({ id, p: id === S.pid ? S.profile : await DB.get('profile:' + id) }))).then(list => {
+      el.innerHTML = list.filter(x => x.p).map(({ id, p }) => `<div class="card row" style="justify-content:space-between">
+        <span><b>${esc(p.poteName)}</b> <span class="muted">avec ${esc(p.userName)}</span>${id === S.pid ? ' <span class="muted">· actif</span>' : ''}</span>
+        ${id === S.pid ? '' : `<button class="btn small primary" data-sw="${id}">Passer à ${esc(p.poteName)}</button>`}</div>`).join('');
+      $$('[data-sw]', el).forEach(b => b.onclick = async () => { await DB.set('active', b.dataset.sw); location.reload(); });
+    });
+  }
+  async function deleteProfile(pid) {
+    await DB.delDaysOf(pid);
+    await DB.del('profile:' + pid); await DB.del('fiche:' + pid); await DB.del('about:' + pid);
+    S.profiles = S.profiles.filter(x => x !== pid); await DB.set('profiles', S.profiles);
+    await DB.set('active', S.profiles[0] || null);
+    toast('Pote supprimé'); await sleep(600); location.reload();
   }
 
   function openMirror() {
@@ -993,7 +1085,14 @@ Réponds uniquement avec un objet JSON, sans texte autour :
   async function exportData(withKeys) {
     const settings = clone(S.settings);
     if (!withKeys) settings.keys = { mistral: '', gemini: '', groq: '', claude: '' };
-    const data = { app: 'pixpote', version: VERSION, exportedAt: new Date().toISOString(), profile: S.profile, settings, fiche: S.fiche, poteFiche: S.poteFiche, days: sortedDays().map(k => S.days[k]) };
+    const profiles = [];
+    for (const id of S.profiles) {
+      profiles.push({
+        profile: await DB.get('profile:' + id), fiche: (await DB.get('fiche:' + id)) || '', about: (await DB.get('about:' + id)) || '',
+        days: (await DB.daysOf(id)).map(d => { const c = Object.assign({}, d); delete c.id; delete c.pid; return c; })
+      });
+    }
+    const data = { app: 'pixpote', version: VERSION, exportedAt: new Date().toISOString(), settings, profiles };
     const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'pixpote-sauvegarde-' + dayKey() + '.json';
@@ -1007,15 +1106,27 @@ Réponds uniquement avec un objet JSON, sans texte autour :
       const f = inp.files && inp.files[0]; if (!f) return;
       try {
         const data = JSON.parse(await f.text());
-        if (data.app !== 'pixpote' || !data.profile) throw new Error("ce fichier n'est pas une sauvegarde Pixpote");
-        if (!fromWelcome && !confirm('Remplacer toutes les données actuelles par cette sauvegarde ?')) return;
-        await DB.clearAll();
-        const settings = Object.assign(clone(DEFAULT_SETTINGS), data.settings || {});
-        // on garde les clés actuelles si la sauvegarde n'en contient pas
-        Object.keys(settings.keys || {}).forEach(k => { if (!settings.keys[k] && S.settings.keys[k]) settings.keys[k] = S.settings.keys[k]; });
-        await DB.set('profile', data.profile); await DB.set('settings', settings); await DB.set('fiche', data.fiche || ''); await DB.set('poteFiche', data.poteFiche || '');
-        for (const d of (data.days || [])) await DB.putDay(d);
-        toast('Sauvegarde restaurée ✅'); await sleep(700); location.reload();
+        if (data.app !== 'pixpote') throw new Error("ce fichier n'est pas une sauvegarde Pixpote");
+        // sauvegarde v1.0 / v1.1 : un seul pote
+        const list = data.profiles || (data.profile ? [{ profile: data.profile, fiche: data.fiche, about: '', days: data.days }] : []);
+        if (!list.length) throw new Error('aucun pote dans ce fichier');
+        if (!fromWelcome && !confirm(`Ajouter ${list.length > 1 ? 'les ' + list.length + ' potes' : 'le pote'} de cette sauvegarde à côté des tiens ?`)) return;
+        // les clés : on garde celles du téléphone, on complète avec celles de la sauvegarde
+        const incoming = data.settings || {};
+        if (fromWelcome) S.settings = Object.assign(clone(DEFAULT_SETTINGS), incoming, { keys: Object.assign(clone(DEFAULT_SETTINGS.keys), incoming.keys || {}), models: Object.assign(clone(DEFAULT_SETTINGS.models), incoming.models || {}) });
+        else Object.keys(incoming.keys || {}).forEach(k => { if (!S.settings.keys[k] && incoming.keys[k]) S.settings.keys[k] = incoming.keys[k]; });
+        await saveSettings();
+        let first = null;
+        for (const item of list) {
+          if (!item.profile) continue;
+          const pid = newPid(); first = first || pid;
+          await DB.set('profile:' + pid, item.profile); await DB.set('fiche:' + pid, item.fiche || ''); await DB.set('about:' + pid, item.about || '');
+          for (const d of (item.days || [])) { const c = Object.assign({}, d, { pid, id: pid + '|' + d.date }); await DB.putDay(c); }
+          S.profiles.push(pid); await sleep(5);
+        }
+        await DB.set('profiles', S.profiles);
+        if (first) await DB.set('active', first);
+        toast('Sauvegarde importée ✅'); await sleep(700); location.reload();
       } catch (e) { toast('Import impossible : ' + e.message, 4000); }
     };
     inp.click();
@@ -1121,7 +1232,7 @@ Réponds uniquement avec un objet JSON, sans texte autour :
   }
 
   // Petit accès pour les tests
-  window.__pixpote = { S, callAI, parseReply, normEmo, dayKey, buildSystem: () => buildSystem(), summarizeDay, anim };
+  window.__pixpote = { S, DB, callAI, parseReply, normEmo, dayKey, buildSystem: () => buildSystem(), summarizeDay, anim };
 
   init().catch(e => { console.error(e); document.body.innerHTML = '<p style="padding:20px">Erreur au démarrage : ' + esc(e.message) + '</p>'; });
 })();
